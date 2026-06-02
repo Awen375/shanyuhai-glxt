@@ -1,1 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>山予海 · 员工中心</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <style>
+        body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; background: #f0f4f8; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; flex-direction: column; }
+        .card { background: white; border-radius: 24px; padding: 30px; max-width: 400px; width: 100%; box-shadow: 0 15px 30px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        h2 { color: #0b4f6c; margin-bottom: 20px; text-align: center; }
+        input, button { width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 16px; }
+        button { background: #1e90ff; color: white; border: none; cursor: pointer; font-weight: 600; border-radius: 50px; }
+        .hidden { display: none; }
+        .info { text-align: center; font-size: 18px; margin: 15px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+        th, td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; }
+        th { background: #f8fafc; }
+    </style>
+</head>
+<body>
+    <!-- 登录界面 -->
+    <div id="loginBox" class="card">
+        <h2>🔐 员工登录</h2>
+        <input type="text" id="phoneInput" placeholder="手机号">
+        <input type="password" id="passwordInput" placeholder="密码">
+        <button onclick="login()">登录</button>
+        <p id="loginError" style="color:red;text-align:center;"></p>
+    </div>
 
+    <!-- 打卡界面 -->
+    <div id="workBox" class="hidden" style="width:100%; max-width:400px;">
+        <div class="card">
+            <h2>👷 员工工作台</h2>
+            <div class="info">👤 <strong id="displayName"></strong></div>
+            <div class="info" id="todayStatus">今日考勤：未打卡</div>
+            <button id="checkInBtn" onclick="checkIn()">✅ 上班打卡</button>
+            <button id="checkOutBtn" onclick="checkOut()" disabled>🏠 下班打卡</button>
+            <button onclick="showMyRecords()" style="background:#3498db;">📅 我的考勤</button>
+            <button onclick="logout()" style="background:#ccc;color:#333;">退出登录</button>
+        </div>
+    </div>
+
+    <!-- 考勤记录弹窗 -->
+    <div id="recordsModal" class="card hidden" style="position:fixed; top:10%; left:50%; transform:translateX(-50%); z-index:100; max-height:80vh; overflow-y:auto;">
+        <h3>📋 我的考勤记录</h3>
+        <table id="recordsTable"><thead><tr><th>日期</th><th>上班</th><th>下班</th></tr></thead><tbody></tbody></table>
+        <button onclick="document.getElementById('recordsModal').classList.add('hidden')">关闭</button>
+    </div>
+
+    <script>
+        const API_BASE = '/api/employee';
+        let currentPhone = '';
+
+        (function() {
+            if (localStorage.getItem('staff_token')) {
+                document.getElementById('loginBox').classList.add('hidden');
+                document.getElementById('workBox').classList.remove('hidden');
+                currentPhone = localStorage.getItem('staff_phone');
+                document.getElementById('displayName').innerText = currentPhone;
+                loadTodayStatus();
+            }
+        })();
+
+        async function login() {
+            const phone = document.getElementById('phoneInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            const res = await fetch(`${API_BASE}/login`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ phone, password })
+            });
+            const data = await res.json();
+            if (data.token) {
+                localStorage.setItem('staff_token', data.token);
+                localStorage.setItem('staff_phone', phone);
+                currentPhone = phone;
+                document.getElementById('loginBox').classList.add('hidden');
+                document.getElementById('workBox').classList.remove('hidden');
+                document.getElementById('displayName').innerText = data.name;
+                loadTodayStatus();
+            } else {
+                document.getElementById('loginError').innerText = data.error || '登录失败';
+            }
+        }
+
+        async function loadTodayStatus() {
+            const token = localStorage.getItem('staff_token');
+            const res = await fetch(`${API_BASE}/today`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.checkIn) {
+                document.getElementById('todayStatus').innerText = `今日上班：${data.checkIn}`;
+                document.getElementById('checkInBtn').disabled = true;
+                if (data.checkOut) {
+                    document.getElementById('todayStatus').innerText += `  下班：${data.checkOut}`;
+                    document.getElementById('checkOutBtn').disabled = true;
+                } else {
+                    document.getElementById('checkOutBtn').disabled = false;
+                }
+            }
+        }
+
+        async function checkIn() {
+            const token = localStorage.getItem('staff_token');
+            const res = await fetch(`${API_BASE}/checkin`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('打卡成功');
+                loadTodayStatus();
+            } else {
+                alert('打卡失败：' + (data.error || ''));
+            }
+        }
+
+        async function checkOut() {
+            const token = localStorage.getItem('staff_token');
+            const res = await fetch(`${API_BASE}/checkout`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('下班打卡成功');
+                loadTodayStatus();
+            } else {
+                alert('打卡失败：' + (data.error || ''));
+            }
+        }
+
+        async function showMyRecords() {
+            const token = localStorage.getItem('staff_token');
+            const res = await fetch(`${API_BASE}/records`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            const tbody = document.querySelector('#recordsTable tbody');
+            tbody.innerHTML = '';
+            data.records.forEach(r => {
+                tbody.innerHTML += `<tr><td>${r.date}</td><td>${r.checkIn || '-'}</td><td>${r.checkOut || '-'}</td></tr>`;
+            });
+            document.getElementById('recordsModal').classList.remove('hidden');
+        }
+
+        function logout() {
+            localStorage.removeItem('staff_token');
+            localStorage.removeItem('staff_phone');
+            location.reload();
+        }
+    </script>
+</body>
+</html>
