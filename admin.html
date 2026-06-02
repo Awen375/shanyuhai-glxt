@@ -1,1 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>山予海 · 员工管理</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <style>
+        body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; background: #f0f4f8; padding: 30px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: white; border-radius: 20px; padding: 25px; margin-bottom: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        h2 { color: #0b4f6c; margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { border-bottom: 1px solid #eee; padding: 10px 6px; text-align: left; }
+        th { background: #f8fafc; }
+        input, button, select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        button { background: #1e90ff; color: white; border: none; cursor: pointer; border-radius: 20px; padding: 8px 18px; margin-right: 6px; }
+        button.danger { background: #e74c3c; }
+        .flex-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+        .hidden { display: none; }
+        #loginBox { max-width: 350px; margin: 100px auto; }
+    </style>
+</head>
+<body>
+    <div id="loginBox" class="card">
+        <h2>🔐 管理员登录</h2>
+        <input type="password" id="adminPass" placeholder="输入超级密码" style="width:100%;margin-bottom:10px;">
+        <button onclick="login()">登录</button>
+        <p id="loginError" style="color:red;"></p>
+    </div>
 
+    <div id="mainPanel" class="container hidden">
+        <h1>🏨 山予海员工管理</h1>
+        <button onclick="logout()" style="background:#ccc;color:#333;float:right;">退出</button>
+
+        <div class="card">
+            <h2>👥 员工列表</h2>
+            <div class="flex-row">
+                <input type="text" id="newName" placeholder="姓名">
+                <input type="text" id="newPhone" placeholder="手机号">
+                <input type="text" id="newPosition" placeholder="职位">
+                <input type="password" id="newPass" placeholder="密码">
+                <button onclick="addEmployee()">新增员工</button>
+            </div>
+            <table id="staffTable">
+                <thead><tr><th>姓名</th><th>手机号</th><th>职位</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>📋 考勤记录查询</h2>
+            <div class="flex-row">
+                <span>选择员工：</span>
+                <select id="staffSelect"><option value="">-- 请选择 --</option></select>
+                <input type="date" id="startDate">
+                <input type="date" id="endDate">
+                <button onclick="loadRecords()">查询</button>
+            </div>
+            <table id="recordTable">
+                <thead><tr><th>日期</th><th>姓名</th><th>上班</th><th>下班</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const ADMIN_PASSWORD = 'zjm1314520';
+        const token = () => localStorage.getItem('admin_token');
+
+        function login() {
+            if (document.getElementById('adminPass').value === ADMIN_PASSWORD) {
+                localStorage.setItem('admin_token', ADMIN_PASSWORD);
+                document.getElementById('loginBox').classList.add('hidden');
+                document.getElementById('mainPanel').classList.remove('hidden');
+                loadAll();
+            } else {
+                document.getElementById('loginError').innerText = '密码错误';
+            }
+        }
+        function logout() { localStorage.removeItem('admin_token'); location.reload(); }
+
+        if (token() === ADMIN_PASSWORD) {
+            document.getElementById('loginBox').classList.add('hidden');
+            document.getElementById('mainPanel').classList.remove('hidden');
+            loadAll();
+        }
+
+        async function loadAll() { await loadEmployees(); }
+
+        async function loadEmployees() {
+            const res = await fetch('/api/admin/employees', { headers: {'x-admin-token': token()} });
+            const data = await res.json();
+            const tbody = document.querySelector('#staffTable tbody');
+            tbody.innerHTML = '';
+            const select = document.getElementById('staffSelect');
+            select.innerHTML = '<option value="">-- 请选择 --</option>';
+            data.employees.forEach(e => {
+                tbody.innerHTML += `<tr>
+                    <td>${e.name}</td>
+                    <td>${e.phone}</td>
+                    <td>${e.position}</td>
+                    <td>${e.status === 'active' ? '✅在职' : '❌离职'}</td>
+                    <td>
+                        <button onclick="resetPassword('${e.phone}')">🔑重置密码</button>
+                        <button onclick="toggleStatus('${e.phone}')" class="danger">${e.status === 'active' ? '停用' : '启用'}</button>
+                    </td></tr>`;
+                select.innerHTML += `<option value="${e.phone}">${e.name} (${e.phone})</option>`;
+            });
+        }
+
+        async function addEmployee() {
+            const name = document.getElementById('newName').value.trim();
+            const phone = document.getElementById('newPhone').value.trim();
+            const position = document.getElementById('newPosition').value.trim();
+            const password = document.getElementById('newPass').value;
+            if (!name || !phone || !password) return alert('必填项不能为空');
+            await fetch('/api/admin/employees', {
+                method: 'POST', headers: {'Content-Type':'application/json','x-admin-token':token()},
+                body: JSON.stringify({ name, phone, position, password })
+            });
+            loadEmployees();
+        }
+
+        async function resetPassword(phone) {
+            const newPass = prompt('输入新密码');
+            if (!newPass) return;
+            await fetch('/api/admin/employees', {
+                method: 'PUT', headers: {'Content-Type':'application/json','x-admin-token':token()},
+                body: JSON.stringify({ phone, password: newPass })
+            });
+            alert('密码已重置');
+        }
+
+        async function toggleStatus(phone) {
+            await fetch('/api/admin/employees', {
+                method: 'PUT', headers: {'Content-Type':'application/json','x-admin-token':token()},
+                body: JSON.stringify({ phone, toggleStatus: true })
+            });
+            loadEmployees();
+        }
+
+        async function loadRecords() {
+            const phone = document.getElementById('staffSelect').value;
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            if (!phone || !start || !end) return alert('请选择员工和日期范围');
+            const res = await fetch(`/api/admin/records?phone=${phone}&start=${start}&end=${end}`, {
+                headers: {'x-admin-token':token()}
+            });
+            const data = await res.json();
+            const tbody = document.querySelector('#recordTable tbody');
+            tbody.innerHTML = '';
+            data.records.forEach(r => {
+                tbody.innerHTML += `<tr><td>${r.date}</td><td>${r.name}</td><td>${r.checkIn||'-'}</td><td>${r.checkOut||'-'}</td></tr>`;
+            });
+        }
+    </script>
+</body>
+</html>
